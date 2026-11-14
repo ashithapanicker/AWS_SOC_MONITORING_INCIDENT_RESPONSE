@@ -44,7 +44,7 @@ See `05_Architecture_Diagrams/AWS_SOC_Lab_Architecture_Reverse_SSH_Tunnel.png`.
 
 - Generated and investigated 50 simulated security events in the documented test run.
 - Grouped events into 19 activity categories.
-- Developed and configured 20 detection rules.
+- configured 20 detection rules.
 - Configured and enabled Splunk alerts.
 - Reviewed triggered alerts and performed validation testing.
 - Conducted benign activity and false-positive testing.
