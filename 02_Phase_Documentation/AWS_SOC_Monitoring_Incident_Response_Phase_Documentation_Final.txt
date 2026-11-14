@@ -1,0 +1,1009 @@
+# AWS SOC Monitoring and Incident Response Lab
+## Consolidated Phase Documentation
+
+**Platform:** AWS EC2 Ubuntu  
+**SIEM:** Splunk Enterprise  
+**Index:** `aws_security_lab`  
+**Scope:** Controlled security-event simulation and SOC investigation exercises
+
+This document consolidates the completed project phases in numerical order, from Phase 1 through Phase 8. Phase 4 (Alert Triage) and Phase 5 (Splunk Alert Configuration) have been added to complete the sequence. The SQL injection scenario remains documented only as a simulated detection example where relevant; no separate web-attack incident-response report is included because that exercise was not completed.
+
+**Evidence note:** The lab scenarios and attacker indicators are simulated. Conclusions are limited to the recorded event evidence and the actions actually performed. This document does not claim that a real attacker compromised or was blocked by the lab.
+
+---
+
+# SOC Attack Simulation & Detection Investigation
+## Phase 1 — Initial Event Investigation Findings
+
+### 1. Objective
+
+The objective of this investigation was to examine selected security events collected in Splunk from an AWS EC2 Linux environment. The investigation focused on identifying suspicious activities, understanding system behavior, and recording initial findings based on available log evidence.
+
+### 2. Lab Environment
+
+- **Cloud platform:** Amazon Web Services (AWS)
+- **Infrastructure:** EC2 Linux instance
+- **SIEM:** Splunk
+- **Log index:** `aws_security_lab`
+- **Investigation scope:** 50 selected event IDs (SOC-001 to SOC-050)
+- **Simulation runs:**
+  - `SOC20261106T045050Z-d84c54`
+  - `SOC20261106T045537Z-36e5fd`
+
+Each selected event ID contained records from both simulation runs.
+
+### 3. Investigation Methodology
+
+The investigation was conducted using Splunk Search Processing Language (SPL).
+
+The following query was used to retrieve individual events:
+
+```spl
+index=aws_security_lab event_id="SOC-XXX"
+| table _time run_id _raw
+| sort 0 _time
+```
+
+The investigation involved:
+
+1. Identifying the event activity and relevant fields.
+2. Examining usernames, IP addresses, processes, commands and file paths.
+3. Checking authentication results and operation outcomes.
+4. Identifying suspicious or potentially legitimate behavior.
+5. Recording an initial finding without assuming that an attempted action was successful.
+
+### 4. Individual Event Findings
+
+#### Authentication and Account Activity
+
+| Event | Activity observed | Initial finding |
+|---|---|---|
+| SOC-001 | Eight failed SSH authentication attempts against `admin` from `198.51.100.23` within 60 seconds. | Suspicious SSH authentication activity. No successful login shown. |
+| SOC-002 | Failed SSH login attempt for `root`. | Suspicious privileged-account authentication attempt. No successful root login shown. |
+| SOC-003 | SSH authentication failure for invalid user `oracle`. | Possible username probing or enumeration. |
+| SOC-004 | Failed public-key authentication for `ubuntu`. | Failed SSH key authentication. Successful access not demonstrated. |
+| SOC-005 | Multiple username probes against SSH using `admin`, `test`, `guest` and `oracle`. | Suspicious username enumeration activity. |
+| SOC-022 | Authentication-failure threshold of 12 attempts within 120 seconds recorded. | Possible brute-force detection condition. Actual observed failure count requires validation. |
+| SOC-026 | Successful public-key SSH authentication for `ubuntu` from `10.0.2.14`. | Successful login. Source authorization requires verification. |
+| SOC-038 | Successful start of a sudo session by `ubuntu`. | Privileged session activity. Authorization requires verification. |
+| SOC-044 | Successful Ubuntu login-shell start from `10.0.2.14`. | Successful interactive user session. Requires correlation with SSH events. |
+
+#### Privilege and System Access Activity
+
+| Event | Activity observed | Initial finding |
+|---|---|---|
+| SOC-006 | `www-data` attempted to run `/usr/bin/apt-get`; authorization denied. | Suspicious privilege-related activity. No successful package operation shown. |
+| SOC-007 | Ubuntu user attempted to switch to root using `su`; authentication failed. | Failed privilege escalation attempt. |
+| SOC-016 | `www-data` attempted to read `/etc/passwd`; permission denied. | Unauthorized file-access attempt. |
+| SOC-017 | Unknown user attempted to access `/root/.ssh/authorized_keys`; permission denied. | Suspicious attempt to access root SSH configuration. |
+| SOC-027 | Successful execution of `apt-get update` by `ubuntu`. | Likely routine package-management activity. |
+| SOC-028 | Root successfully upgraded `ca-certificates`. | Likely routine system maintenance. |
+| SOC-029 | Root successfully reloaded the SSH service. | Administrative service activity. Configuration changes require further verification. |
+| SOC-037 | Root successfully read `/var/log/syslog` using `log-review`. | Likely routine log inspection. |
+| SOC-039 | Ubuntu user successfully checked system service status using `systemctl`. | Likely routine administrative activity. |
+| SOC-040 | `unattended-upgrade` successfully performed package maintenance as root. | Likely automatic system maintenance. |
+
+#### Network and Web Application Activity
+
+| Event | Activity observed | Initial finding |
+|---|---|---|
+| SOC-008 | 35 TCP connection attempts to port 22 within 10 seconds. | Suspicious high-volume SSH connection activity; possible scanning or brute-force behavior. |
+| SOC-009 | Sequential TCP probes against ports 21, 22, 23, 80, 443, 3306 and 8080. | Network reconnaissance and port-scanning behavior. |
+| SOC-010 | HTTP GET request targeting `/../../etc/passwd`; response 400. | Path-traversal attempt. Successful file access not demonstrated. |
+| SOC-011 | SQL injection-style payload using `' OR 1=1--`; response 403. | Suspected SQL injection attempt. Successful database manipulation not demonstrated. |
+| SOC-012 | XSS-style payload containing `<script>alert(1)</script>`; response 403. | Suspected cross-site scripting attempt. Script execution not demonstrated. |
+| SOC-013 | POST request to `/api/execute` with a command-injection marker; response 400. | Possible command-injection attempt. Successful command execution not demonstrated. |
+| SOC-014 | Request to access `/.env`; response 404. | Attempt to discover a potentially sensitive configuration file. Disclosure not demonstrated. |
+| SOC-015 | Request to access `/wp-admin`; response 404. | WordPress administrative-path discovery attempt. Successful access not demonstrated. |
+| SOC-032 | Successful HTTP GET request to `/health` from `10.0.2.25`; status 200. | Likely legitimate internal health-check request. |
+| SOC-033 | Successful request for `/robots.txt`; status 200. | Likely routine web request or crawling activity. |
+| SOC-035 | Successful TCP connection to port 443 using `curl` from `10.0.2.30`. | Likely normal outbound HTTPS activity. Destination requires verification. |
+| SOC-048 | Established SSH connection from `10.0.2.14` to port 22. | Successful SSH network connection. Requires correlation with authentication events. |
+
+#### Process, Persistence and Data Transfer Activity
+
+| Event | Activity observed | Initial finding |
+|---|---|---|
+| SOC-018 | Simulated Netcat reverse-connection activity targeting `203.0.113.120:4444`. | Simulated reverse-connection behavior. Functional reverse shell not established. |
+| SOC-019 | `www-data` process associated with `web_worker` spawned `python3` with an unexpected-shell marker. | Suspicious simulated process behavior. Actual command execution requires further evidence. |
+| SOC-020 | Attempt to write to `/etc/cron.d/lab-entry`; blocked. | Simulated persistence attempt through cron configuration. No successful persistence shown. |
+| SOC-021 | Attempt to append to `/home/ubuntu/.ssh/authorized_keys`; blocked. | Simulated SSH-key persistence attempt. No successful modification shown. |
+| SOC-024 | Simulated unusual outbound HTTPS transfer of 52,428,800 bytes (50 MiB). | Possible data-exfiltration behavior. Actual data theft not established. |
+| SOC-030 | Root successfully executed a daily log-rotation task. | Likely routine scheduled maintenance. |
+| SOC-031 | Backup account successfully created an archive using `tar` at `/var/backups/etc-backup.tar.gz`. | Likely legitimate backup activity. Contents and authorization require verification. |
+| SOC-036 | Ubuntu user successfully created `/home/ubuntu/report.txt`. | Normal-looking file creation activity. |
+| SOC-046 | Root successfully installed the `unzip` package. | Likely package administration. Installation authorization requires verification. |
+| SOC-047 | Ubuntu user successfully appended content to `/home/ubuntu/.bash_history`. | Normal-looking shell history update. No evidence of history tampering from this event alone. |
+| SOC-049 | Backup account successfully transferred 42 files using `rsync`, totaling 1,048,576 bytes (1 MiB). | Likely backup activity. Destination and authorization require verification. |
+
+#### DNS and Cloud Activity
+
+| Event | Activity observed | Initial finding |
+|---|---|---|
+| SOC-023 | Long encoded-looking DNS query from `10.0.1.25`. | Potential DNS tunneling indicator. A single query is insufficient to confirm tunneling. |
+| SOC-025 | Simulated attempt to access AWS EC2 metadata credentials through `169.254.169.254`; blocked. | Potential cloud credential-access attempt. Credential theft not demonstrated. |
+| SOC-034 | DNS A-record query for `packages.ubuntu.com`. | Likely legitimate Ubuntu package-domain lookup. |
+| SOC-041 | Successful `node_exporter` metrics collection every 15 seconds. | Normal-looking system monitoring activity. |
+| SOC-042 | Successful heartbeat from `amazon-ssm-agent`. | Likely normal AWS Systems Manager communication. |
+| SOC-043 | Successful `cloud-init` instance status check. | Likely normal cloud-instance management activity. |
+| SOC-045 | Successful execution of `apt-daily.timer`. | Likely scheduled Ubuntu package maintenance. |
+| SOC-050 | Successful rsyslog message-forwarding check. | Likely normal system logging infrastructure activity. |
+
+### 5. Important Initial Observations
+
+1. **SSH authentication activity:** Multiple failed authentication events were observed, along with successful SSH activity. These require correlation to determine whether they are related.
+
+2. **Privilege-related activity:** Several events involved attempted or successful privileged operations. Denied attempts and successful administrative actions must be evaluated separately.
+
+3. **Web attack indicators:** The logs contained common attack patterns, including path traversal, SQL injection, XSS and command-injection markers.
+
+4. **Persistence indicators:** Attempts involving cron configuration and SSH authorized keys were recorded as blocked.
+
+5. **Cloud security:** A simulated AWS metadata credential-access attempt was blocked.
+
+6. **Normal system activity:** Package maintenance, monitoring, backups, service checks and log forwarding were also observed.
+
+7. **Simulation context:** The logs contain two distinct simulation run IDs. Event records must be correlated by run ID and timestamp before drawing conclusions about attack sequences.
+
+### 6. Investigation Limitations
+
+- The findings are based on the selected event records, not the complete 30,089-event index.
+- A successful connection or operation does not automatically indicate malicious activity.
+- A failed or blocked action does not establish that all related activity was prevented.
+- HTTP response codes alone do not prove whether an attack succeeded or failed completely.
+- Some events contain simulation markers; these must be distinguished from confirmed system compromise.
+- Destination details, authorization records and supporting logs are still needed for some findings.
+- No final true-positive, false-positive, true-negative or false-negative classifications have been assigned at this stage.
+
+### 7. Phase 1 Conclusion
+
+The initial investigation of all 50 selected event IDs identified a mixture of suspicious authentication attempts, web attack indicators, privilege-related activity, simulated persistence techniques, cloud credential-access behavior and routine administrative operations.
+
+The available evidence provides an initial understanding of the recorded activities but is not sufficient to determine the complete attack sequence or final detection effectiveness.
+
+**Next phase:** Event correlation — connecting related events through timestamps, source IP addresses, usernames, hosts and simulation run IDs to identify possible attack sequences and distinguish suspicious activity from legitimate system operations.
+
+---
+
+**Status:** Phase 1 — Completed (50/50 event IDs reviewed).
+
+**Final incident assessment:** Pending further correlation and detection validation.
+
+
+
+
+
+
+
+
+
+# Phase 2 – Security Event Correlation
+
+## Objective
+Correlate related security events to identify activity patterns, establish event relationships and understand potential attack sequences using Splunk SIEM.
+
+## Methodology
+- Analysed related events using Splunk SPL.
+- Compared timestamps, hostnames, source IPs, usernames and simulation run IDs.
+- Grouped events based on related behaviours.
+- Distinguished suspicious activity from routine system and administrative operations.
+- Examined event outcomes to avoid assuming successful compromise from attempted activity.
+
+## Correlation Findings
+
+### 1. SSH Authentication and Login Activity
+**Events:** SOC-026, SOC-044, SOC-048
+
+Correlated successful public-key authentication, login shell initiation and an SSH TCP connection from the same internal source. Identified a sequence of related SSH activity.
+
+### 2. SSH Authentication Failures and Username Probing
+**Events:** SOC-001–SOC-005
+
+Identified password failures, root login rejection, invalid username attempts, public-key authentication failure and multiple username probes. Recognised different source IPs and avoided incorrectly attributing all events to one actor.
+
+### 3. Web Application Attack Activity
+**Events:** SOC-010–SOC-015
+
+Correlated simulated path traversal, SQL injection, cross-site scripting (XSS), command injection and sensitive web path discovery attempts.
+
+### 4. Sensitive File Access and Persistence Attempts
+**Events:** SOC-016–SOC-021
+
+Investigated sensitive file access attempts, simulated reverse connection activity, suspicious process execution and attempted cron and SSH authorized_keys modifications.
+
+### 5. Authentication Threshold, DNS and Data Transfer Activity
+**Events:** SOC-022–SOC-025
+
+Identified an authentication failure threshold event, an unusually long DNS query, unusual outbound HTTPS data transfer and an attempted AWS instance metadata access.
+
+### 6. System Maintenance Activity
+**Events:** SOC-027–SOC-030, SOC-040, SOC-045, SOC-046
+
+Grouped routine system updates, certificate upgrades, SSH service reloads and log rotation activities. Distinguished maintenance-related events from suspicious activity.
+
+### 7. Monitoring and Cloud Management Activity
+**Events:** SOC-032–SOC-035, SOC-039, SOC-041–SOC-043, SOC-050
+
+Correlated system health checks, monitoring services, AWS Systems Manager activity, cloud-init and logging operations.
+
+### 8. File, Backup and User Activity
+**Events:** SOC-031, SOC-036–SOC-038, SOC-047, SOC-049
+
+Reviewed backup archive creation, report generation, syslog access, sudo activity, shell history modification and rsync transfer activity.
+
+## Key Outcomes
+- Completed eight security event correlation groups.
+- Identified relationships between authentication, web, file access, process and network events.
+- Established event sequences using timestamps and shared attributes.
+- Distinguished routine administrative activity from simulated suspicious behaviour.
+- Improved understanding of attack patterns and investigation context.
+
+## Investigation Limitations
+- Events were generated in a controlled simulation environment.
+- Source addresses included documentation-reserved TEST-NET IP ranges.
+- Correlation establishes relationships between events, not necessarily a confirmed compromise.
+- Failed or blocked operations do not prove successful exploitation.
+- Each simulation run was treated separately to avoid incorrectly combining unrelated activity.
+
+## Phase 2 Status
+**Completed – Security Event Correlation**
+
+The findings from this phase provide the investigation foundation for Phase 3: Detection Engineering.
+
+
+
+
+
+
+
+# Phase 3 – Detection Engineering Report
+
+## 1. Objective
+
+The objective of this phase was to develop security detection rules in Splunk to identify suspicious activities across the AWS EC2 SOC lab.
+
+A total of 20 detection rules were created to identify authentication attacks, privilege escalation attempts, web attacks, persistence attempts, suspicious processes, unusual network activity and potential AWS security risks.
+
+## 2. Environment
+
+- **SIEM:** Splunk Enterprise
+- **Log collection:** Splunk Universal Forwarder
+- **Infrastructure:** AWS EC2 – Ubuntu
+- **Index:** `aws_security_lab`
+- **Detection source:** Controlled SOC simulation events
+- **Detection method:** SPL (Search Processing Language)
+- **Alert severity:** Medium and High
+
+## 3. Detection Rules Implemented
+
+| No. | Detection rule | Event ID(s) | Severity |
+|---:|---|---|---|
+| 1 | SSH Brute Force | SOC-001 | High |
+| 2 | SSH Username Enumeration | SOC-003, SOC-005 | Medium |
+| 3 | SSH Root Login Attempt | SOC-002 | Medium |
+| 4 | SSH Public-Key Authentication Failure | SOC-004 | Medium |
+| 5 | SSH Privilege Escalation Attempt | SOC-007 | High |
+| 6 | High-Volume SSH Connection | SOC-008 | High |
+| 7 | Web Path Traversal | SOC-010 | High |
+| 8 | Web SQL Injection | SOC-011 | High |
+| 9 | Cross-Site Scripting (XSS) | SOC-012 | High |
+| 10 | Web Command Injection | SOC-013 | High |
+| 11 | Sensitive Web Path Discovery | SOC-014, SOC-015 | Medium |
+| 12 | Cron Persistence Attempt | SOC-020 | High |
+| 13 | SSH Authorized Keys Persistence Attempt | SOC-021 | High |
+| 14 | Netcat Reverse Connection | SOC-018 | High |
+| 15 | Suspicious Python Process | SOC-019 | High |
+| 16 | Possible DNS Tunnelling | SOC-023 | Medium |
+| 17 | Unusual Outbound Data Transfer | SOC-024 | High |
+| 18 | AWS Metadata Access Attempt | SOC-025 | High |
+| 19 | Sensitive File Access | SOC-016, SOC-017 | High |
+| 20 | Authentication Failure Threshold | SOC-022 | High |
+
+## 4. Detection Logic and Purpose
+
+### Authentication and SSH detections
+
+**1. SSH Brute Force**
+
+Identifies repeated failed SSH authentication attempts from the same source IP and against the same username. The detection uses an attempt threshold of at least five failures within a 60-second window.
+
+The simulated event contained eight failed attempts against the `admin` account from `198.51.100.23`.
+
+**2. SSH Username Enumeration**
+
+Identifies invalid-user authentication attempts and activity involving multiple username probes. The simulation included an invalid `oracle` account attempt and probes involving `admin`, `test`, `guest` and `oracle`.
+
+**3. SSH Root Login Attempt**
+
+Detects attempts to authenticate directly as the root account when the login is not permitted.
+
+**4. SSH Public-Key Authentication Failure**
+
+Identifies failed SSH public-key authentication attempts, including the simulated failure involving the `ubuntu` account.
+
+**5. SSH Privilege Escalation Attempt**
+
+Detects suspicious privilege escalation activity involving the `su` command and an attempted transition from `ubuntu` to `root`.
+
+The simulated event recorded an authentication failure; successful privilege escalation was not demonstrated.
+
+**6. High-Volume SSH Connection**
+
+Identifies unusually high volumes of TCP connection attempts to SSH port 22. The simulated scenario contained 35 connection attempts within 10 seconds.
+
+### Web attack detections
+
+**7. Web Path Traversal**
+
+Detects suspicious directory traversal patterns, including `../` and URL-encoded traversal sequences, in web requests.
+
+**8. Web SQL Injection**
+
+Identifies SQL injection patterns in web request parameters. The simulation included a URL-encoded SQL injection payload and an HTTP 403 response.
+
+**9. Cross-Site Scripting (XSS)**
+
+Detects suspicious JavaScript payloads submitted through web requests.
+
+**10. Web Command Injection**
+
+Identifies suspicious command-injection patterns in web requests, including the simulated request to `/api/execute`.
+
+**11. Sensitive Web Path Discovery**
+
+Detects requests for sensitive or commonly probed web paths, including `/.env` and `/wp-admin`.
+
+### Persistence and suspicious process detections
+
+**12. Cron Persistence Attempt**
+
+Identifies suspicious attempts to write scheduled-task entries under `/etc/cron.d/`. The simulation recorded a blocked write to `/etc/cron.d/lab-entry`.
+
+**13. SSH Authorized Keys Persistence Attempt**
+
+Detects suspicious attempts to append an SSH public key to `/home/ubuntu/.ssh/authorized_keys`.
+
+**14. Netcat Reverse Connection**
+
+Identifies simulated reverse-connection activity involving Netcat, including the destination `203.0.113.120:4444`.
+
+**15. Suspicious Python Process**
+
+Detects suspicious Python process activity based on its parent process, execution context and unexpected shell marker. The simulated event involved `python3`, a `web_worker` parent and the `www-data` account.
+
+### Network and AWS security detections
+
+**16. Possible DNS Tunnelling**
+
+Identifies unusually long, encoded-looking DNS query names. The simulated event contained a query length of 58 characters.
+
+This indicator requires further investigation and is not sufficient by itself to confirm DNS tunnelling.
+
+**17. Unusual Outbound Data Transfer**
+
+Detects unusually large outbound transfers. The simulation recorded 52,428,800 bytes (50 MiB) over HTTPS to `203.0.113.150`.
+
+**18. AWS Metadata Access Attempt**
+
+Detects attempts to access the EC2 instance metadata endpoint, including the IAM security credentials path. The simulated request was blocked.
+
+### File access and authentication threshold detections
+
+**19. Sensitive File Access**
+
+Identifies suspicious access attempts involving sensitive system files, including `/etc/passwd` and `/root/.ssh/authorized_keys`.
+
+The simulated scenarios recorded denied access attempts.
+
+**20. Authentication Failure Threshold**
+
+Detects authentication failure threshold events. The simulated event recorded 12 failures within a 120-second window for the `ubuntu` account.
+
+## 5. Alert Severity Classification
+
+The detection rules were assigned Medium or High severity according to the potential security impact and investigation priority.
+
+- **High:** Potentially serious activity requiring prompt investigation, such as brute force, privilege escalation, exploitation attempts, persistence and unusual outbound transfers.
+- **Medium:** Suspicious activity requiring investigation and contextual analysis, such as username enumeration, root login attempts and unusual DNS queries.
+
+Severity indicates investigation priority, not proof that an attack succeeded.
+
+## 6. Implementation Outcome
+
+- 20 detection rules were created in Splunk.
+- The rules were configured as saved alerts.
+- All 20 alerts were enabled.
+- Trigger conditions and alert actions were configured.
+- The alerts were set to add results to Splunk Triggered Alerts.
+- Detection results were reviewed against the controlled simulation data.
+
+The SSH Brute Force alert was additionally configured with a 20-minute suppression period using `run_id` as its suppression field. A subsequent simulation run with a new run ID produced a new alert.
+
+This suppression configuration has a limitation: using only `run_id` can suppress other results belonging to the same run. It should not be treated as a complete production-grade deduplication strategy.
+
+## 7. Limitations
+
+1. The events were generated by a controlled simulation script and do not represent actual attacks against the EC2 instance.
+2. Detection results demonstrate the ability to identify the supplied event patterns, not the detection effectiveness against every real-world attack variation.
+3. Some events represent blocked or failed actions rather than successful exploitation.
+4. Certain detections require additional contextual evidence before an incident can be confirmed.
+5. TEST-NET IP addresses were used as simulated source and destination addresses.
+6. The detection rules would require further tuning and testing before production deployment.
+
+## 8. Phase Conclusion
+
+Phase 3 successfully established 20 Splunk detection rules covering authentication attacks, web attacks, persistence attempts, suspicious processes, network anomalies and AWS-related security events.
+
+These detections provide the foundation for subsequent alert triage, validation and incident investigation activities in the SOC lab.
+
+
+
+
+
+
+
+# Phase 4 – Alert Triage and Initial Assessment Report
+
+## 1. Objective
+
+The objective of this phase was to review the detection results generated by the Splunk detection rules, assess the available event evidence, classify the simulated alerts and determine whether further investigation was required.
+
+The triage process followed the responsibilities of an initial SOC analyst: validate the alert, review the associated evidence, assess the activity and escalate suspicious findings for deeper investigation.
+
+## 2. Triage Environment
+
+- SIEM: Splunk Enterprise
+- Infrastructure: AWS EC2 – Ubuntu
+- Index: `aws_security_lab`
+- Detection rules created in Phase 3: 20
+- Evidence source: simulated security events SOC-001 to SOC-050
+
+## 3. Triage Methodology
+
+The following steps were used when reviewing alert results:
+
+1. Identify the detection name and the event or events associated with the alert.
+2. Review the raw event and relevant fields, including timestamp, source IP, username, process, command, endpoint and action or result.
+3. Compare the observed activity with the detection condition.
+4. Determine whether the record represents an attempted, failed, blocked or successful action.
+5. Assess whether the activity is suspicious, expected or requires additional context.
+6. Record the triage assessment and identify whether the event should be escalated for further investigation.
+
+The triage review used Splunk search results and the associated raw event evidence. It did not rely solely on an alert title.
+
+## 4. Triage Classification
+
+The suspicious detection results were reviewed and classified as **True Positive (Simulated)** where the alert matched the intended suspicious pattern deliberately generated by the lab simulation.
+
+This classification means that the detection matched the expected simulated indicator. It does not mean that a real-world attack, successful compromise or malicious impact was confirmed.
+
+Routine activities were assessed separately during the benign activity and false-positive testing documented in Phase 7.
+
+## 5. Triage Assessment by Activity Category
+
+| Activity category | Evidence reviewed | Initial triage assessment |
+|---|---|---|
+| SSH brute-force and authentication failures | SOC-001 to SOC-005 and SOC-022 | Suspicious simulated authentication activity; investigate source, account and authentication outcome. |
+| SSH root and privilege-related activity | SOC-002, SOC-006 and SOC-007 | Suspicious or failed privileged-access attempts; successful privilege escalation was not established. |
+| High-volume SSH and port scanning | SOC-008 and SOC-009 | Suspicious simulated network reconnaissance or connection activity. |
+| Web attack patterns | SOC-010 to SOC-015 | Suspicious simulated path traversal, SQL injection, XSS, command injection and sensitive-path discovery attempts. |
+| File access and persistence attempts | SOC-016, SOC-017, SOC-020 and SOC-021 | Suspicious access or persistence attempts; the recorded outcomes did not demonstrate successful modification or access. |
+| Suspicious process and network behaviour | SOC-018, SOC-019, SOC-023 and SOC-024 | Suspicious simulated behaviour requiring further investigation; the events alone did not prove a functioning reverse shell, DNS tunnel or data theft. |
+| AWS metadata access | SOC-025 | Simulated metadata-access attempt; the recorded scenario indicated that access was blocked. |
+
+The project recorded 19 suspicious triage groups as True Positive (Simulated). Grouping related results for triage does not change the fact that 20 detection rules were configured.
+
+## 6. Escalation and Investigation Decisions
+
+The following findings were selected for deeper investigation and response exercises:
+
+- **SSH brute-force activity – SOC-001:** selected for deeper investigation, target-account verification and host firewall response configuration. This completed investigation is documented in Phase 8.
+- **SQL injection indicator – SOC-011:** retained as a simulated detection example from the event and detection-engineering work. A separate incident investigation and response exercise was not completed and is therefore not included in this final phase documentation.
+
+Other suspicious detections were recorded as simulated findings and assessed according to their available event evidence. The project did not create or use a separate enterprise ticketing or case-management platform.
+
+## 7. Triage Outcome
+
+| Triage area | Outcome |
+|---|---|
+| Detection rules available for review | 20 |
+| Suspicious triage groups recorded | 19 |
+| Suspicious group classification | True Positive (Simulated) |
+| Selected incident for completed deeper investigation | SSH brute force |
+| Routine activity review | Documented separately in Phase 7 |
+| Evidence source | Splunk events and raw-event details |
+
+## 8. Limitations
+
+1. All security scenarios were generated by a controlled simulation.
+2. True Positive (Simulated) describes a match to the intended test pattern, not confirmation of a real attack.
+3. Some events represented attempts or blocked actions rather than successful activity.
+4. A complete investigation of every detection was outside the scope of the two selected incident-response exercises.
+5. No enterprise ticketing or case-management workflow was implemented.
+
+## 9. Phase Conclusion
+
+Phase 4 established a repeatable alert-triage approach for reviewing Splunk detection results, validating event evidence, assessing outcomes and selecting suspicious findings for escalation.
+
+The SSH brute-force scenario was selected for the completed deeper investigation documented in Phase 8. The SQL injection event remains a simulated detection example only and is not presented as a completed incident-response exercise. All triage conclusions were kept within the limits of the simulated evidence.
+
+---
+
+# Phase 5 – Splunk Alert Configuration Report
+
+## 1. Objective
+
+The objective of this phase was to convert the detection searches developed in Phase 3 into saved Splunk alerts, configure their execution and trigger behaviour, and enable them for monitoring the lab's indexed events.
+
+## 2. Alert Configuration Environment
+
+- SIEM: Splunk Enterprise
+- Infrastructure: AWS EC2 – Ubuntu
+- Index: `aws_security_lab`
+- Detection searches: 20
+- Configured alerts: 20
+- Alert status: Enabled
+
+## 3. Alert Configuration Approach
+
+The detection searches were saved as alerts in Splunk. The configured alerts were intended to execute on a schedule, evaluate their search results and create entries in Splunk Triggered Alerts when their trigger conditions were met.
+
+The project used the following alert configuration elements:
+
+- **Schedule:** scheduled searches were configured to run every five minutes.
+- **Time range:** the search time range was configured to cover recent events. The SSH Brute Force alert used an explicit 20-minute lookback ending at `now`.
+- **Trigger condition:** the alert was configured to trigger when the search returned one or more results.
+- **Trigger action:** Add to Triggered Alerts.
+- **Alert status:** all 20 configured alerts were enabled.
+
+No email, webhook or external notification integration was configured as part of this project.
+
+## 4. SSH Brute Force Alert – Detailed Configuration
+
+The SSH Brute Force alert received an additional configuration review and throttling test.
+
+| Setting | Configured value |
+|---|---|
+| Alert name | SSH Brute Force |
+| Schedule | Every 5 minutes (`*/5 * * * *`) |
+| Earliest time | `-20m` |
+| Latest time | `now` |
+| Trigger condition | Number of Results greater than 0 |
+| Trigger action | Add to Triggered Alerts |
+| Alert display mode | Per Result |
+| Throttling | Enabled |
+| Suppression field | `run_id` |
+| Suppression period | 20 minutes |
+
+The suppression configuration was tested. A result associated with an existing run was suppressed during the configured period, while a subsequent simulation run with a new `run_id` generated a new alert.
+
+## 5. Alert Inventory
+
+A total of 20 detection searches were configured as alerts and enabled. The alert inventory corresponded to the detection categories developed in Phase 3:
+
+1. SSH Brute Force
+2. SSH Username Enumeration
+3. SSH Root Login
+4. SSH Public-Key Authentication Failure
+5. SSH Privilege Escalation
+6. High-Volume SSH Connection
+7. Web Path Traversal
+8. Web SQL Injection
+9. Cross-Site Scripting (XSS)
+10. Command Injection
+11. Sensitive Web Path Discovery
+12. Cron Persistence Attempt
+13. SSH Authorized Keys Persistence Attempt
+14. Netcat Reverse Connection
+15. Suspicious Python Process
+16. Possible DNS Tunnelling
+17. Unusual Outbound Data Transfer
+18. AWS Metadata Access Attempt
+19. Sensitive File Access
+20. Authentication Failure Threshold
+
+## 6. Configuration Outcome
+
+| Configuration item | Outcome |
+|---|---|
+| Detection searches saved as alerts | 20 |
+| Alerts enabled | 20 |
+| Scheduled execution | Configured |
+| Trigger condition | Results greater than zero |
+| Trigger action | Add to Triggered Alerts |
+| SSH Brute Force lookback | 20 minutes to `now` |
+| SSH Brute Force throttling | Enabled and tested |
+| External notification integration | Not configured |
+
+## 7. Configuration Limitations
+
+1. The detailed throttling configuration described above applies to the SSH Brute Force alert; throttling was not configured for the other 19 alerts.
+2. The SSH Brute Force suppression field was set to `run_id`. This can suppress distinct results that share the same run ID during the suppression period.
+3. Scheduled execution and alert history do not independently prove that every saved SPL search was correctly validated against every possible event pattern.
+4. The alert action added results to Splunk Triggered Alerts; no email, webhook or external incident-management notification was configured.
+5. The project used Splunk Free in a controlled lab environment and was not designed as a production monitoring deployment.
+
+## 8. Phase Conclusion
+
+Phase 5 converted the 20 detection searches into enabled Splunk alerts and configured scheduled execution and trigger behaviour.
+
+The SSH Brute Force alert received additional lookback and throttling configuration, and its suppression behaviour was tested. The configuration provided the basis for the detection and alert validation performed in Phase 6.
+
+---
+
+# Phase 6 – Detection and Alert Validation Report
+
+## 1. Objective
+
+The objective of this phase was to validate the detection rules and alert configurations created in Phase 3 and Phase 5.
+
+The validation focused on confirming that simulated security events were indexed in Splunk, detection searches returned expected results, and configured alerts generated triggered-alert entries.
+
+## 2. Validation Environment
+
+- SIEM: Splunk Enterprise
+- Infrastructure: AWS EC2 – Ubuntu
+- Index: `aws_security_lab`
+- Simulation run ID: `SOC20261114T075614Z-e98015`
+- Detection rules: 20
+- Alert configuration: 20 enabled alerts
+
+## 3. Validation Activities
+
+### 3.1 Event Evidence Validation
+
+A consolidated Splunk search was used to examine the suspicious event categories associated with the latest simulation run.
+
+The validation covered the following event IDs:
+
+- SOC-001 to SOC-025 – suspicious and security-related scenarios.
+- SOC-026 to SOC-050 – benign and routine system activities.
+
+The suspicious event records were reviewed to confirm that the expected scenario details were present.
+
+### 3.2 Detection Result Validation
+
+Detection results were reviewed against the simulated events.
+
+Specific validation examples included:
+
+**SSH Brute Force – SOC-001**
+
+- Source IP: `198.51.100.23`
+- Username: `admin`
+- Failed attempts: 8
+- Detection threshold: At least 5 failures within 60 seconds
+- Result: Expected detection result returned.
+
+**SSH Privilege Escalation – SOC-007**
+
+- User: `ubuntu`
+- Command: `/usr/bin/su`
+- Target: `root`
+- Result: Authentication failure
+- Result: Expected detection result returned.
+
+**SSH Username Enumeration – SOC-003 and SOC-005**
+
+- Invalid username attempt: `oracle`
+- Multiple username probes: `admin`, `test`, `guest`, `oracle`
+- Result: Expected event evidence identified.
+
+The other suspicious scenarios were also reviewed through grouped raw-event validation.
+
+### 3.3 Alert Trigger Validation
+
+The saved alerts were checked in Splunk Triggered Alerts.
+
+The project recorded triggered-alert entries for all 20 configured alerts.
+
+The SSH Brute Force alert was additionally tested after its throttling configuration was changed.
+
+- An existing run was suppressed during the configured suppression period.
+- A subsequent simulation run with a new `run_id` generated a new alert.
+
+The suppression test demonstrated the configured behaviour for the tested scenario.
+
+## 4. Validation Results
+
+| Validation area | Result |
+|---|---|
+| Suspicious event evidence | Reviewed |
+| Benign event evidence | Reviewed |
+| Detection rules created | 20 |
+| Alerts enabled | 20 |
+| Triggered-alert entries | Present for all 20 |
+| SSH Brute Force detection | Validated |
+| SSH Privilege Escalation detection | Validated |
+| SSH Username Enumeration evidence | Validated |
+| Grouped suspicious-event evidence | Validated |
+| SSH Brute Force throttling | Tested |
+
+## 5. Limitations
+
+1. The validation used controlled simulation events rather than actual malicious activity.
+2. Raw-event presence confirms that the expected simulation evidence was indexed; it does not independently prove every saved detection search works correctly.
+3. Not every saved detection SPL was independently revalidated against the latest simulation run.
+4. Triggered-alert entries demonstrate alert execution history but do not independently establish successful attack detection in a real environment.
+5. The SSH Brute Force suppression configuration uses `run_id` as its suppression field. This may suppress distinct results sharing the same run ID.
+6. Validation results should not be interpreted as proof of production-level detection effectiveness.
+
+## 6. Phase Conclusion
+
+Phase 6 established that the simulated security events were available in Splunk, the detection rules and alert configurations had been implemented, and triggered-alert entries were present for all 20 configured alerts.
+
+Selected detections and the SSH Brute Force throttling behaviour were specifically examined.
+
+The phase provided validation evidence for the controlled SOC lab while documenting the limitations of simulation-based testing.
+
+
+
+
+
+# Phase 7 – Benign Activity and False-Positive Testing Report
+
+## 1. Objective
+
+The objective of this phase was to examine normal system and user activities in the SOC lab and determine whether they generated unexpected security alerts.
+
+This testing helps assess whether the detection rules distinguish suspicious activity from routine system operations.
+
+## 2. Testing Environment
+
+- SIEM: Splunk Enterprise
+- Infrastructure: AWS EC2 – Ubuntu
+- Index: `aws_security_lab`
+- Simulation run ID: `SOC20261114T075614Z-e98015`
+- Benign event range: SOC-026 to SOC-050
+
+## 3. Benign Activities Tested
+
+A total of 25 benign activity events were reviewed.
+
+| Event ID | Activity | Description |
+|---|---|---|
+| SOC-026 | SSH Authentication | Successful public-key authentication |
+| SOC-027 | Package Management | APT update completed |
+| SOC-028 | System Maintenance | CA certificates package upgraded |
+| SOC-029 | SSH Service | SSH service reload |
+| SOC-030 | Log Maintenance | Daily log rotation |
+| SOC-031 | Backup | System configuration backup created |
+| SOC-032 | Web Monitoring | Health-check request returned HTTP 200 |
+| SOC-033 | Web Request | robots.txt request returned HTTP 200 |
+| SOC-034 | DNS Activity | Ubuntu package repository DNS query |
+| SOC-035 | Network Activity | Internal HTTPS connection succeeded |
+| SOC-036 | File Activity | Report file created by ubuntu |
+| SOC-037 | Log Review | System log read by root |
+| SOC-038 | Sudo Activity | Sudo session started by ubuntu |
+| SOC-039 | Service Monitoring | systemctl status check |
+| SOC-040 | Package Maintenance | Unattended upgrade completed |
+| SOC-041 | Monitoring | Node Exporter metrics scrape |
+| SOC-042 | AWS Management | SSM agent heartbeat |
+| SOC-043 | Cloud Initialization | Cloud-init instance status check |
+| SOC-044 | SSH Session | Login shell started by ubuntu |
+| SOC-045 | Scheduled Maintenance | apt-daily timer activity |
+| SOC-046 | Package Installation | Unzip package installed |
+| SOC-047 | User Activity | Bash history updated |
+| SOC-048 | Network Monitoring | SSH TCP connection established |
+| SOC-049 | Backup | Rsync transfer completed |
+| SOC-050 | Log Forwarding | Rsyslog forwarding check |
+
+## 4. Validation Activities
+
+### 4.1 Event Count Verification
+
+A Splunk search was used to count events by event ID.
+
+The results confirmed that each event from SOC-026 through SOC-050 appeared once in the latest simulation run.
+
+### 4.2 Activity Review
+
+The raw event records were reviewed to understand the activity, user, process or service involved, and reported outcome.
+
+The activities were classified as expected benign operations based on their simulated event descriptions.
+
+SOC-047, involving Bash history modification, was noted as an activity that can require additional context in a real environment.
+
+### 4.3 Alert Review
+
+The triggered-alert results were reviewed.
+
+No benign activity events from SOC-026 through SOC-050 were observed in the reviewed triggered-alert results.
+
+This indicated that the tested benign events did not generate observed false-positive alerts in this simulation run.
+
+## 5. Testing Results
+
+| Test | Result |
+|---|---|
+| Benign events reviewed | 25 |
+| Events SOC-026 to SOC-050 | 25 |
+| Count verification | One event per ID |
+| Benign activity classification | Reviewed |
+| Benign events in reviewed triggered alerts | None observed |
+| False positives observed | None in this test run |
+
+## 6. Limitations
+
+1. Testing was performed using controlled simulation events.
+2. The absence of false positives in this run does not prove that the detection rules will never generate false positives.
+3. Some activities, such as privileged log access and Bash history modification, require user, process and operational context.
+4. Further testing with different normal activity patterns would be necessary to assess detection accuracy more comprehensively.
+
+## 7. Phase Conclusion
+
+Phase 7 reviewed 25 simulated benign activities covering authentication, package management, system maintenance, monitoring, network activity, file operations and backups.
+
+No benign events were observed in the reviewed triggered-alert results.
+
+The testing provided an initial assessment of false-positive behaviour within the controlled SOC lab.
+
+
+
+
+
+
+# Phase 8 – SSH Brute-Force Incident Investigation and Response Report
+
+## 1. Objective
+
+The objective of this phase was to investigate a simulated SSH brute-force incident, analyse the available evidence, perform containment at the host level and review the response from an L3 analyst perspective.
+
+The exercise followed the SOC incident response workflow involving L1 detection, L2 investigation and L3 containment.
+
+## 2. Incident Details
+
+| Field | Details |
+|---|---|
+| Incident | Possible SSH Brute Force |
+| Event ID | SOC-001 |
+| Simulation Run ID | SOC20261114T075614Z-e98015 |
+| Source IP | 198.51.100.23 |
+| Target username | admin |
+| Failed attempts | 8 |
+| Detection threshold | 5 attempts within 60 seconds |
+| Severity | High |
+| Target system | AWS EC2 Ubuntu |
+
+The source IP belongs to a reserved documentation IP range and was used as a simulated attacker address.
+
+## 3. L1 – Alert Detection and Initial Triage
+
+The SSH Brute Force detection rule generated an alert in Splunk.
+
+The alert result identified:
+
+- Source IP: `198.51.100.23`
+- Username: `admin`
+- Failed attempts: 8
+- Detection: Possible SSH Brute Force
+
+The corresponding raw event, SOC-001, recorded eight failed password attempts within 60 seconds.
+
+L1 identified the activity as suspicious and escalated it for further investigation.
+
+## 4. L2 – Incident Investigation
+
+The investigation was performed using Splunk and the EC2 Ubuntu terminal.
+
+### 4.1 Authentication Evidence
+
+The raw SSH event confirmed repeated failed authentication attempts.
+
+A search for successful SSH authentication from the same source IP returned no matching events.
+
+### 4.2 Source IP Investigation
+
+Events associated with the source IP were reviewed.
+
+Only the simulated SSH brute-force event SOC-001 was identified for that source in the investigated run.
+
+### 4.3 Target Account Verification
+
+The target username was `admin`.
+
+The EC2 system was checked using:
+
+`getent passwd admin`
+
+No matching account was returned.
+
+The active EC2 user was verified using:
+
+`whoami`
+
+Output:
+
+`ubuntu`
+
+### 4.4 L2 Assessment
+
+The evidence supported a simulated SSH brute-force attempt involving eight failed authentication attempts.
+
+No successful SSH authentication from the simulated source IP was identified.
+
+The target `admin` account was not present on the EC2 instance.
+
+Successful compromise was therefore not established.
+
+## 5. L3 – Containment and Response
+
+The L3 response focused on configuring host-level firewall protection.
+
+The EC2 owner authorised the firewall changes.
+
+### 5.1 Firewall Status
+
+The UFW firewall was initially inactive.
+
+The following command was executed to allow SSH connectivity:
+
+`sudo ufw allow OpenSSH`
+
+The firewall was then enabled:
+
+`sudo ufw enable`
+
+The firewall configuration was reviewed using:
+
+`sudo ufw status verbose`
+
+The resulting configuration showed:
+
+- Incoming traffic: Denied by default
+- Outgoing traffic: Allowed by default
+- SSH access: Allowed
+
+### 5.2 Source IP Blocking
+
+A deny rule was added for the simulated source IP:
+
+`sudo ufw deny from 198.51.100.23 to any port 22 proto tcp`
+
+The command returned:
+
+`Rule added`
+
+The configured rules were reviewed using:
+
+`sudo ufw status numbered`
+
+The deny rule for the source IP and SSH port 22 was present.
+
+### 5.3 Containment Outcome
+
+The UFW firewall was successfully enabled and the source-specific SSH deny rule was added.
+
+The existing SSH session remained operational.
+
+However, a new connection test from the blocked source IP was not performed. Therefore, independent verification of connection blocking was not completed.
+
+## 6. L3 Review and Assessment
+
+The L3 assessment included:
+
+1. Reviewing the original detection evidence.
+2. Confirming that no successful authentication from the simulated source was identified.
+3. Reviewing the firewall configuration.
+4. Confirming that the SSH allow rule and source-specific deny rule were present.
+5. Identifying the remaining verification limitation.
+
+The response demonstrated host-level firewall containment configuration.
+
+## 7. Limitations
+
+1. The incident was generated through a controlled simulation.
+2. The source IP was a reserved TEST-NET documentation address, not a real attacker address.
+3. No actual brute-force attack was performed against the EC2 instance.
+4. The deny rule was configured, but a connection attempt from the blocked source was not independently tested.
+5. The firewall changes were performed as a controlled response exercise with the EC2 owner's authorisation.
+
+## 8. Phase Conclusion
+
+Phase 8 demonstrated the investigation and response workflow for a simulated SSH brute-force incident.
+
+L1 identified the alert, L2 investigated authentication evidence and target account details, and L3 enabled UFW and configured a source-specific SSH deny rule.
+
+The firewall configuration was verified, although independent connection-block verification remained outstanding.
+
+This exercise demonstrated practical host-level containment configuration and the importance of verifying response effectiveness before declaring an incident fully contained.
